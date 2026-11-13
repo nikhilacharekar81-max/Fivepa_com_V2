@@ -49,7 +49,8 @@ import {
   parseDeadlineInstant,
   calculateExtendedDeadline,
   processAutoAcceptOrders,
-  getReviewWindowDays
+  getReviewWindowDays,
+  calculateInvoiceReviewDeadline
 } from '../services/orderService.js';
 import { broadcastMessage } from '../websocket.js';
 import {
@@ -337,6 +338,14 @@ router.get('/orders/:id/invoice', requireAuth, async (req: Request, res: Respons
           ? 'in_escrow'
           : 'unpaid';
 
+    const pendingInvRes = await pool.query(
+      `SELECT * FROM workstream_offers WHERE order_id = $1 AND kind = 'invoice' AND status = 'pending' ORDER BY created_at DESC LIMIT 1`,
+      [order.id]
+    );
+    const pendingInvRow = pendingInvRes.rows[0];
+    const dl = calculateInvoiceReviewDeadline(order, pendingInvRow);
+    const autoReleaseAt = dl ? new Date(dl).toISOString() : null;
+
     const invoice = {
       id: `inv_${order.id}`,
       invoiceNumber,
@@ -347,6 +356,7 @@ router.get('/orders/:id/invoice', requireAuth, async (req: Request, res: Respons
       issueDate: (order.createdAt || new Date().toISOString()).slice(0, 10),
       dueDate: (order.dueDate || order.createdAt || new Date().toISOString()).slice(0, 10),
       completedAt: order.completedAt || null,
+      autoReleaseAt,
       buyer: {
         id: order.buyerId,
         name: buyer?.name || (order as any).buyerUsername || 'Buyer',
@@ -383,7 +393,7 @@ router.get('/orders/:id/invoice', requireAuth, async (req: Request, res: Respons
       platformCommission,
       sellerNet,
       currency: 'USD',
-      notes: 'FivePA 100% Protected Escrow Transaction. Funds held safely in escrow until client approval.'
+      notes: 'FivePA Escrow-Protected Transaction. Funds held safely in escrow until client approval.'
     };
 
     res.json(invoice);

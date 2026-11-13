@@ -587,6 +587,7 @@ export interface WorkstreamOffer {
   rejectedBy?: string;
   rejectedAt?: string;
   autoProcessedAt?: string;
+  autoReleaseAt?: string;
   metadata?: any;
 }
 

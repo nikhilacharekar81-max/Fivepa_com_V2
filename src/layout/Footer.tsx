@@ -19,11 +19,11 @@ export function Footer({ navigate }: FooterProps) {
             <span className="text-base font-extrabold tracking-tight text-slate-900">WorkPerHour</span>
           </a>
           <p className="text-sm text-slate-500 leading-relaxed mb-6 font-normal">
-            WorkPerHour is a secure freelance marketplace with 100% Escrow payment protection, real-time Workstream collaboration, and Gemini AI proposal generation.
+            WorkPerHour is a secure freelance marketplace with Escrow-protected payments and real-time Workstream collaboration.
           </p>
           <div className="flex items-center gap-2 text-sm text-emerald-600 font-semibold">
             <ShieldCheck className="w-4 h-4" />
-            <span>100% Escrow Protected</span>
+            <span>Escrow-Protected Payments</span>
           </div>
         </div>
 
@@ -106,9 +106,9 @@ export function Footer({ navigate }: FooterProps) {
               </button>
             </li>
             <li>
-              <button onClick={(e) => navigate('/support', e)} className="text-slate-500 hover:text-emerald-600 transition-colors cursor-pointer text-left">
-                Gemini AI Engine
-              </button>
+              <a href="/refund-policy" onClick={(e) => navigate('/refund-policy', e)} className="text-slate-500 hover:text-emerald-600 transition-colors cursor-pointer text-left">
+                Refund & Escrow Policy
+              </a>
             </li>
           </ul>
         </div>
@@ -137,13 +137,17 @@ export function Footer({ navigate }: FooterProps) {
             Admin Portal
           </a>
           <span>·</span>
-          <button onClick={(e) => navigate('/support', e)} className="hover:text-emerald-600 cursor-pointer">
+          <a href="/terms" onClick={(e) => navigate('/terms', e)} className="hover:text-emerald-600 cursor-pointer">
             Terms of Service
-          </button>
+          </a>
           <span>·</span>
-          <button onClick={(e) => navigate('/support', e)} className="hover:text-emerald-600 cursor-pointer">
+          <a href="/privacy" onClick={(e) => navigate('/privacy', e)} className="hover:text-emerald-600 cursor-pointer">
             Privacy Policy
-          </button>
+          </a>
+          <span>·</span>
+          <a href="/refund-policy" onClick={(e) => navigate('/refund-policy', e)} className="hover:text-emerald-600 cursor-pointer">
+            Refund Policy
+          </a>
         </div>
       </div>
     </footer>

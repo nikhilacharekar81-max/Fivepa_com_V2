@@ -20,6 +20,7 @@ import { isStaffUser } from '../middleware/auth.js';
 import { recordMessage } from './messagingService.js';
 import { broadcastMessage } from '../websocket.js';
 import { createNotification } from './notificationService.js';
+import { calculateInvoiceReviewDeadline } from './orderService.js';
 
 export { WORKSTREAM_UPLOADS_DIR };
 if (!fs.existsSync(WORKSTREAM_UPLOADS_DIR)) {
@@ -446,6 +447,7 @@ export async function viewOffer(o: WorkstreamOffer) {
   let clientTotal: number | undefined;
   let additionalAmount: number | undefined;
   let clientAdditionalTotal: number | undefined;
+  let autoReleaseAt: string | undefined;
   try {
     const liveQuote = await quoteOrderWithLiveSettings(o.amount).catch(() => calculateOrderFees(o.amount));
     clientTotal = liveQuote?.clientTotal;
@@ -461,6 +463,12 @@ export async function viewOffer(o: WorkstreamOffer) {
       } else {
         clientAdditionalTotal = 0;
       }
+      if (ord && o.status === 'pending') {
+        const deadline = calculateInvoiceReviewDeadline(ord, o);
+        if (deadline) {
+          autoReleaseAt = new Date(deadline).toISOString();
+        }
+      }
     }
   } catch { /* quote is informational only */ }
   return {
@@ -468,6 +476,7 @@ export async function viewOffer(o: WorkstreamOffer) {
     clientTotal,
     additionalAmount,
     clientAdditionalTotal,
+    autoReleaseAt,
     currencySymbol: siteSettings.getFlattenedSettings().currencySymbol || '$'
   };
 }

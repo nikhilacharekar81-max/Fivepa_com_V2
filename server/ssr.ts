@@ -167,6 +167,9 @@ export async function setupSSR(
         initialData.pageType = 'projects';
       } else if (['/freelancers', '/search-freelancers', '/freelancer-search'].includes(pathname)) {
         initialData.pageType = 'freelancers';
+      } else if (['/terms', '/privacy', '/refund-policy'].includes(pathname)) {
+        initialData.pageType = 'legal';
+        initialData.legalType = pathname.slice(1);
       } else if (pathParts.length >= 2 && (pathParts[0].toLowerCase() === 'gig' || pathParts[0].toLowerCase() === 'gigs')) {
         const gigId = pathParts[1];
         const subSlug = pathParts[2];

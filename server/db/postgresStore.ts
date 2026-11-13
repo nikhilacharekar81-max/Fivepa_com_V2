@@ -1018,13 +1018,13 @@ export class PostgresStore {
       throw new Error(`[PostgresStore] FATAL: cleanAllData() is strictly prohibited when NODE_ENV is not 'test' (current: ${process.env.NODE_ENV}).`);
     }
 
+    // Safety check: The test database must be a dedicated test database (never the default 'postgres' database).
     const APPROVED_TEST_DATABASES = [
       'cloud_sql_test_database',
       'test_database',
       'fivepa_test',
       'app_test',
-      'pglite_test',
-      'postgres'
+      'pglite_test'
     ];
 
     const pool = this.getPool();

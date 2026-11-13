@@ -82,6 +82,8 @@ export interface WorkstreamOffer {
   files?: Array<{ id?: string; name: string; size: string; url: string; uploadedAt?: string }>;
   reference?: string;
   rejectionReason?: string;
+  responseDeadline?: string;
+  autoReleaseAt?: string;
   metadata?: Record<string, any>;
 }
 

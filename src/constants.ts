@@ -9,3 +9,5 @@ export const DEFAULT_GIG_IMAGE = "data:image/svg+xml,%3Csvg xmlns='http://www.w3
 
 export const DEFAULT_PROJECT_IMAGE = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 800 500'%3E%3Crect width='800' height='500' fill='%231e293b'/%3E%3Ctext x='400' y='250' font-size='32' font-family='sans-serif' font-weight='bold' fill='%2338bdf8' text-anchor='middle'%3EWorkPerHour Project%3C/text%3E%3C/svg%3E";
 
+export const LEGAL_DRAFT_NOTICE = "DRAFT - must be reviewed by a lawyer before launch";
+

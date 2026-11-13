@@ -75,6 +75,24 @@ export async function sendOrderEmail(userId: string, subject: string, body: stri
   }
 }
 
+export async function notifyUserEmail(params: { userId?: string; user?: any; subject: string; body?: string; html?: string; text?: string; path?: string }, client?: any): Promise<void> {
+  try {
+    const targetId = params.userId || params.user?.id;
+    const targetEmail = params.user?.email || (targetId ? (await store.getUser(targetId, client))?.email : null);
+    if (!targetEmail || !targetEmail.includes('@')) return;
+    const bodyText = params.body || params.text || (params.html ? params.html.replace(/<[^>]*>/g, '') : '');
+    const link = params.path && APP_URL ? `\n\nOpen link: ${APP_URL}${params.path}` : '';
+    const fullText = `${bodyText}${link}\n\n- FivePA`;
+    if (client || postgresStore.isActiveTransaction()) {
+      postgresStore.onCommit(() => sendEmail(targetEmail, params.subject, fullText));
+    } else {
+      sendEmail(targetEmail, params.subject, fullText);
+    }
+  } catch (err: any) {
+    console.warn('[email] notifyUserEmail suppressed error:', err?.message || err);
+  }
+}
+
 export async function recordUserEmail(email: UserEmail): Promise<void> {
   const sanitized: UserEmail = {
     ...email,

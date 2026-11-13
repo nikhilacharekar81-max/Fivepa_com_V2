@@ -12,5 +12,6 @@ export const PRIVATE_ROUTES = [
 
 export const RESERVED_ROUTES = [
   ...PRIVATE_ROUTES,
-  'gigs', 'projects', 'search-projects', 'project-search', 'freelance-jobs', 'categories', 'freelancers', 'search-freelancers', 'freelancer-search', 'profile'
+  'gigs', 'projects', 'search-projects', 'project-search', 'freelance-jobs', 'categories', 'freelancers', 'search-freelancers', 'freelancer-search', 'profile',
+  'terms', 'privacy', 'refund-policy'
 ];

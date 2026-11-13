@@ -22,6 +22,7 @@ import { FreelancerProfileView } from './components/profile/FreelancerProfileVie
 import { EditProfilePage } from './components/profile/EditProfilePage';
 import { AdminPage } from './pages/AdminPage';
 import { SettingsPage } from './pages/SettingsPage';
+import { LegalPage } from './pages/LegalPage';
 import { WorkstreamWorkspace } from './components/workstream/WorkstreamWorkspace';
 import { WorkstreamList } from './components/workstream/WorkstreamList';
 import { PaymentsModule } from './components/PaymentsModule';
@@ -1092,6 +1093,9 @@ export default function App({ initialPath = '/', initialData }: AppProps) {
         navigate={navigate}
       />
     );
+  } else if (cleanPath === '/terms' || cleanPath === '/privacy' || cleanPath === '/refund-policy') {
+    const docType = cleanPath === '/privacy' ? 'privacy' : cleanPath === '/refund-policy' ? 'refund-policy' : 'terms';
+    mainContent = <LegalPage type={docType} navigate={navigate} />;
   } else if (cleanPath === '/edit-profile') {
     mainContent = (
       <EditProfilePage

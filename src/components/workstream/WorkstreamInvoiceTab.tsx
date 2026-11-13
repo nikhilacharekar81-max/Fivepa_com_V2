@@ -39,6 +39,7 @@ interface InvoiceData {
   sellerNet: number;
   currency: string;
   notes: string;
+  autoReleaseAt?: string | null;
 }
 
 interface WorkstreamInvoiceTabProps {
@@ -172,6 +173,19 @@ export const WorkstreamInvoiceTab: React.FC<WorkstreamInvoiceTabProps> = ({ orde
           </div>
         </div>
 
+        {invoice.autoReleaseAt && invoice.status === 'in_escrow' && (
+          <div className="p-3.5 bg-indigo-50/90 border border-indigo-100 rounded-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 text-xs text-indigo-950">
+            <div className="flex items-center gap-2">
+              <Clock className="w-4 h-4 text-indigo-600 shrink-0" />
+              <span>
+                <strong>Auto-Release Scheduled:</strong> Funds held in escrow will automatically release on{' '}
+                <strong>{new Date(invoice.autoReleaseAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}</strong> unless a revision or dispute is requested.
+              </span>
+            </div>
+            <span className="text-[11px] font-semibold text-indigo-700 bg-indigo-100/70 px-2 py-0.5 rounded-full shrink-0">7-day review period</span>
+          </div>
+        )}
+
         {/* PARTICIPANTS SECTION */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 p-4 rounded-xl bg-slate-50/60 border border-slate-100 text-xs">
           <div>
@@ -217,7 +231,7 @@ export const WorkstreamInvoiceTab: React.FC<WorkstreamInvoiceTabProps> = ({ orde
           <div className="max-w-xs space-y-2 text-xs text-slate-500">
             <div className="flex items-center gap-1.5 text-emerald-700 font-bold">
               <ShieldCheck className="w-4 h-4 text-emerald-600" />
-              <span>100% Escrow Protection</span>
+              <span>Escrow-Protected Payments</span>
             </div>
             <p className="text-xs leading-relaxed text-slate-400">
               Payment was verified and held securely in Escrow. All funds are cleared in full accordance with Marketplace Terms of Service.

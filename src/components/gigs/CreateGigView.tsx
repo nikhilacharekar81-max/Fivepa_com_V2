@@ -229,15 +229,7 @@ export const CreateGigView: React.FC<CreateGigViewProps> = ({
         <div>
           <div className="flex items-center justify-between mb-2">
             <label className="block text-xs font-bold text-fiverr-dark uppercase tracking-wider">Description</label>
-            <button 
-              type="button"
-              onClick={handleOptimizeGigWithAI}
-              disabled={isOptimizingGig}
-              className="flex items-center gap-1.5 px-3 py-1 bg-emerald-50 text-emerald-700 rounded-lg text-xs font-semibold hover:bg-emerald-100 transition-colors border border-emerald-200"
-            >
-              <Sparkles className="w-3.5 h-3.5" />
-              <span>{isOptimizingGig ? 'Optimizing with Gemini...' : 'Optimize with Gemini AI'}</span>
-            </button>
+            <span className="text-xs text-slate-400">Detailed deliverables and milestones</span>
           </div>
           <textarea 
             rows={5}

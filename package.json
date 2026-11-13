@@ -10,6 +10,7 @@
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit",
+    "test": "tsx --test tests/*.test.ts",
     "paypal:smoke": "tsx scripts/paypal-sandbox-smoke.ts",
     "test:paypal": "tsx tests/paypal-webhook.test.ts",
     "test:paypal:env": "tsx tests/paypal-environment-switch.test.ts",
@@ -20,7 +21,6 @@
   "dependencies": {
     "@electric-sql/pglite": "^0.5.12",
     "@google-cloud/storage": "^8.4.0",
-    "@google/genai": "^2.4.0",
     "@tailwindcss/vite": "^4.3.3",
     "@types/bcryptjs": "^2.4.6",
     "@types/pg": "^8.23.1",

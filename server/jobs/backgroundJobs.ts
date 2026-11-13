@@ -1,5 +1,5 @@
 import { financialTransactionService } from '../services/financialService.js';
-import { processCancellationTimeouts, processAutoAcceptOrders } from '../services/orderService.js';
+import { processCancellationTimeouts, processAutoAcceptOrders, processProjectInvoiceReminders } from '../services/orderService.js';
 import { postgresStore, isPostgresEnabled, isRemotePostgresConfigured } from '../db/postgresStore.js';
 import { startOutboxProcessor } from '../services/outboxService.js';
 
@@ -96,6 +96,7 @@ export async function runBackgroundJobs() {
         hasLock = true;
       }
       await processAutoAcceptOrders();
+      await processProjectInvoiceReminders();
     } catch (err) {
       console.error('[BackgroundJobs] Error in auto-accept job:', err);
     } finally {

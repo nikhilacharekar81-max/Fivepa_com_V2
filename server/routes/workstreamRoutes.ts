@@ -42,7 +42,7 @@ import {
   processAutoAcceptOrders
 } from '../services/orderService.js';
 import { broadcastMessage } from '../websocket.js';
-import { createNotification } from '../services/notificationService.js';
+import { createNotification, notifyUserEmail } from '../services/notificationService.js';
 import {
   recordMessage,
   sanitizeAndCreateMessage,
@@ -981,7 +981,8 @@ router.post('/orders/:id/offers', requireAuth, requireActiveStatus, rateLimit(20
       createdAt: new Date().toISOString(),
       metadata: {
         ...(isWorkspaceOnly ? {} : { originOrderId: order!.id }),
-        ...(isWorkspaceOnly ? { workspaceId: workspace.workspaceId } : (order!.workspaceId ? { workspaceId: order!.workspaceId } : {}))
+        ...(isWorkspaceOnly ? { workspaceId: workspace.workspaceId } : (order!.workspaceId ? { workspaceId: order!.workspaceId } : {})),
+        ...(kind === 'invoice' ? { invoiceReminders: { initial: true } } : {})
       }
     };
 
@@ -1164,6 +1165,14 @@ router.post('/orders/:id/offers', requireAuth, requireActiveStatus, rateLimit(20
           : `You received an invoice of $${offer.amount} for "${isWorkspaceOnly ? workspace.title : order!.title}". Please review within ${reviewDays} days.`,
         link: `/workstream/${isWorkspaceOnly ? workspaceId : order!.id}`,
         metadata: { ...(!isWorkspaceOnly ? { orderId: order!.id } : {}), offerId: offer.id, isCustomOrder: isCustomOrderStream }
+      });
+      notifyUserEmail({
+        userId: targetUserId,
+        subject: isCustomOrderStream ? 'Custom Order Invoice received' : 'Invoice received',
+        body: isCustomOrderStream
+          ? `You received a Custom Order Invoice of $${offer.amount} for "${isWorkspaceOnly ? workspace.title : order!.title}". Please review within ${reviewDays} days.`
+          : `You received an invoice of $${offer.amount} for "${isWorkspaceOnly ? workspace.title : order!.title}". Please review within ${reviewDays} days.`,
+        path: `/workstream/${isWorkspaceOnly ? workspaceId : order!.id}`
       });
     } else if (kind === 'proposal') {
       createNotification({

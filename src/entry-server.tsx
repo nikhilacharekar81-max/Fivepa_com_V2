@@ -85,9 +85,17 @@ export function render(url: string, initialData?: any) {
   } else if (pageType === 'freelancers') {
     headTags.push('<title>Top Freelancers & Experts | Work Per Hour</title>');
     headTags.push('<meta name="description" content="Discover and hire verified freelance professionals." />');
+  } else if (pageType === 'legal') {
+    const docTitle = initialData?.legalType === 'privacy'
+      ? 'Privacy Policy'
+      : initialData?.legalType === 'refund-policy'
+      ? 'Refund & Escrow Policy'
+      : 'Terms of Service';
+    headTags.push(`<title>${docTitle} | Work Per Hour</title>`);
+    headTags.push(`<meta name="description" content="${docTitle} and escrow guidelines for Work Per Hour marketplace." />`);
   } else {
     headTags.push('<title>Work Per Hour | Freelance Marketplace</title>');
-    headTags.push('<meta name="description" content="A feature-rich freelance marketplace." />');
+    headTags.push('<meta name="description" content="Escrow-protected freelance marketplace." />');
   }
 
   headTags.push(`<link rel="canonical" href="${canonical}" />`);

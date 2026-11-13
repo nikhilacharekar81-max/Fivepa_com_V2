@@ -372,7 +372,7 @@ export const GigDetailView: React.FC<GigDetailViewProps> = ({
 
                   <div className="bg-emerald-50 border border-emerald-200/60 rounded-2xl p-3 flex items-start gap-2.5 text-[11px] text-emerald-900">
                     <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
-                    <span>100% Escrow Protection. Funds are safely held until work is delivered and approved.</span>
+                    <span>Escrow-Protected Payments. Funds are safely held until work is delivered and approved.</span>
                   </div>
 
                   {orderFeedback && (

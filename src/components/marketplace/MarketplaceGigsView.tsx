@@ -204,9 +204,9 @@ export const MarketplaceGigsView: React.FC<MarketplaceGigsViewProps> = ({
           <div className="relative z-10 max-w-3xl">
             <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-emerald-500/10 text-emerald-400 text-xs font-semibold mb-4 border border-emerald-500/20 backdrop-blur-md">
               <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" />
-              <span>100% Escrow Protection</span>
+              <span>Escrow-Protected Payments</span>
               <span className="text-slate-500">·</span>
-              <span className="text-slate-300">Vetted Top 1% Freelancers</span>
+              <span className="text-slate-300">Vetted Freelance Experts</span>
             </div>
             <h1 className="text-3xl sm:text-4xl md:text-5xl font-extrabold leading-tight tracking-tight mb-4 text-white text-balance">
               {currentCategory === 'All' ? 'Hire top freelance talent with fixed-price escrow' : `${currentCategory} Freelance Gigs`}

@@ -264,7 +264,7 @@ export const AdminEscrowModule: React.FC<AdminEscrowModuleProps> = ({
                         <span className="text-sm font-bold text-slate-900 font-mono">
                           ${ord.amount.toLocaleString()}
                         </span>
-                        <div className="text-[10px] text-slate-400">100% Escrow Protected</div>
+                        <div className="text-[10px] text-slate-400">Escrow Protected</div>
                       </td>
 
                       {/* Status */}

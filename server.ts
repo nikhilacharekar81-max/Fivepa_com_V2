@@ -144,7 +144,11 @@ app.use((req, res, next) => {
     return res.status(503).json({ error: 'Server is shutting down. Please retry shortly.' });
   }
   res.setHeader('X-Content-Type-Options', 'nosniff');
-  res.removeHeader('X-Frame-Options');
+  if (IS_PRODUCTION) {
+    res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+  } else {
+    res.removeHeader('X-Frame-Options');
+  }
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
   res.setHeader(
     'Content-Security-Policy',

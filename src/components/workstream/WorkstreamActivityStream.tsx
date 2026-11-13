@@ -418,6 +418,15 @@ export const WorkstreamActivityStream: React.FC<WorkstreamActivityStreamProps> =
               <span>{isExpanded ? '↑' : '→'}</span>
             </button>
 
+            {isInvoice && offer.status === 'pending' && (offer.autoReleaseAt || offer.responseDeadline) && (
+              <div className="mt-3 p-2.5 rounded-lg bg-indigo-50 border border-indigo-100 flex items-center gap-2 text-xs text-indigo-950">
+                <Clock className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+                <span>
+                  <strong>Auto-release:</strong> {new Date(offer.autoReleaseAt || offer.responseDeadline!).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })} (7-day review period)
+                </span>
+              </div>
+            )}
+
             {/* Expandable details */}
             {isExpanded && (
               <div className="mt-3 pt-3 border-t border-slate-200/70 space-y-2 text-xs text-slate-700">

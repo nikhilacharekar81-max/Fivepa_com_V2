@@ -139,33 +139,8 @@ gigRouter.post('/gigs', requireAuth, requireActiveStatus, async (req: Request, r
     return res.status(400).json({ error: `Gig price ($${gigPrice}) cannot exceed the platform maximum of $${maxGigPrice}.` });
   }
 
-  // Validate package tiers
-  if (req.body.packages && typeof req.body.packages === 'object') {
-    for (const tier of ['basic', 'standard', 'premium']) {
-      if (req.body.packages[tier]) {
-        const p = Number(req.body.packages[tier].price);
-        if (!Number.isFinite(p) || p < minGigPrice || p > maxGigPrice) {
-          return res.status(400).json({ error: `Package tier '${tier}' price ($${p}) must be a valid number between $${minGigPrice} and $${maxGigPrice}.` });
-        }
-        if (Math.abs(Math.round(p * 100) - p * 100) > 1e-6) {
-          return res.status(400).json({ error: `Package tier '${tier}' price can have at most 2 decimal places.` });
-        }
-      }
-    }
-  }
-  if (Array.isArray(req.body.tiers)) {
-    for (const tier of req.body.tiers) {
-      if (tier && tier.price !== undefined) {
-        const p = Number(tier.price);
-        if (!Number.isFinite(p) || p < minGigPrice || p > maxGigPrice) {
-          return res.status(400).json({ error: `Package tier price must be between $${minGigPrice} and $${maxGigPrice}.` });
-        }
-        if (Math.abs(Math.round(p * 100) - p * 100) > 1e-6) {
-          return res.status(400).json({ error: 'Package tier price can have at most 2 decimal places.' });
-        }
-      }
-    }
-  }
+  // Packages have been removed from the platform in favor of single gig price + extras.
+  // Any req.body.packages or req.body.tiers in incoming payloads are stripped and ignored.
 
   const deliveryDays = Math.min(365, Math.max(1, Math.round(Number(req.body.deliveryDays)) || 7));
   const category = typeof req.body.category === 'string' ? req.body.category.trim().slice(0, 100) || 'Development & IT' : 'Development & IT';
@@ -217,7 +192,6 @@ gigRouter.post('/gigs', requireAuth, requireActiveStatus, async (req: Request, r
     featuredUntil: undefined,
     featured_until: undefined,
     isUrgent: false,
-    packages: req.body.packages || undefined,
     extras,
     moderationStatus: activeSettings.marketplace.gigModerationRequired ? 'pending' : 'approved'
   } as any;
@@ -292,33 +266,7 @@ const handleGigUpdate = async (req: Request, res: Response) => {
     if (req.body.deliveryDays !== undefined) {
       updates.deliveryDays = Math.min(365, Math.max(1, Math.round(Number(req.body.deliveryDays)) || 7));
     }
-    if (req.body.packages !== undefined && typeof req.body.packages === 'object') {
-      for (const tier of ['basic', 'standard', 'premium']) {
-        if (req.body.packages[tier]) {
-          const p = Number(req.body.packages[tier].price);
-          if (!Number.isFinite(p) || p < minGigPrice || p > maxGigPrice) {
-            return res.status(400).json({ error: `Package tier '${tier}' price ($${p}) must be a valid number between $${minGigPrice} and $${maxGigPrice}.` });
-          }
-          if (Math.abs(Math.round(p * 100) - p * 100) > 1e-6) {
-            return res.status(400).json({ error: `Package tier '${tier}' price can have at most 2 decimal places.` });
-          }
-        }
-      }
-      updates.packages = req.body.packages;
-    }
-    if (Array.isArray(req.body.tiers)) {
-      for (const tier of req.body.tiers) {
-        if (tier && tier.price !== undefined) {
-          const p = Number(tier.price);
-          if (!Number.isFinite(p) || p < minGigPrice || p > maxGigPrice) {
-            return res.status(400).json({ error: `Package tier price must be between $${minGigPrice} and $${maxGigPrice}.` });
-          }
-          if (Math.abs(Math.round(p * 100) - p * 100) > 1e-6) {
-            return res.status(400).json({ error: 'Package tier price can have at most 2 decimal places.' });
-          }
-        }
-      }
-    }
+    // Packages and tiers are ignored on update; only gig.price + extras are supported.
     if (req.body.extras !== undefined && Array.isArray(req.body.extras)) {
       const parsedExtras: { id: string; title: string; price: number; deliveryDays: number }[] = [];
       const rawExtras = req.body.extras.slice(0, 20);

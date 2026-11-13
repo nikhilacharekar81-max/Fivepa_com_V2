@@ -28,7 +28,7 @@ import {
 import { siteSettings } from '../../src/server/siteSettings.js';
 import { workspaceService } from '../../src/server/workspaceService.js';
 import { emitSystemEvent, recordMessage, registerMessage } from './messagingService.js';
-import { createNotification, sendOrderEmail } from './notificationService.js';
+import { createNotification, sendOrderEmail, notifyUserEmail } from './notificationService.js';
 import { recalculateUserRating } from './reviewService.js';
 import { broadcastMessage } from '../websocket.js';
 import { diagnosticService } from './diagnosticService.js';
@@ -833,6 +833,66 @@ let autoAcceptInFlight: Promise<Array<{
   freelancerNet: number;
 }>> | null = null;
 
+export function calculateInvoiceReviewDeadline(order: any, pendingInvoiceRow: any): number | null {
+  if (!order) return null;
+  const isProject = order.orderType === 'project' || order.type === 'project' || Boolean(order.projectId);
+  const persistedDays = !isProject && typeof order.reviewWindowDays === 'number' && order.reviewWindowDays > 0
+    ? order.reviewWindowDays
+    : null;
+  const days = isProject ? 7 : (persistedDays ?? getReviewWindowDays());
+  const windowMs = days * 24 * 60 * 60 * 1000;
+
+  const hasDeliveryHistory = Array.isArray(order.deliveryHistory) && order.deliveryHistory.length > 0;
+  const latestDelivery = hasDeliveryHistory
+    ? order.deliveryHistory[order.deliveryHistory.length - 1]
+    : (pendingInvoiceRow
+        ? {
+            version: Number(pendingInvoiceRow.metadata?.deliveryVersion) || 1,
+            deliveredAt: pendingInvoiceRow.created_at || pendingInvoiceRow.createdAt,
+            responseDeadline: pendingInvoiceRow.response_deadline || pendingInvoiceRow.responseDeadline || pendingInvoiceRow.metadata?.responseDeadline,
+            offerId: pendingInvoiceRow.id
+          }
+        : null);
+
+  if (!latestDelivery || !latestDelivery.deliveredAt) {
+    if (pendingInvoiceRow && (pendingInvoiceRow.created_at || pendingInvoiceRow.createdAt)) {
+      const c = Date.parse(pendingInvoiceRow.created_at || pendingInvoiceRow.createdAt);
+      if (!isNaN(c)) return c + windowMs;
+    }
+    return null;
+  }
+
+  const deliveredAt = getReviewWindowStart(order, latestDelivery);
+  const restartedAtMs = order.reviewWindowRestartedAt ? Date.parse(order.reviewWindowRestartedAt) : NaN;
+  const hasMoreThanOneDelivery = Array.isArray(order.deliveryHistory) && order.deliveryHistory.length > 1;
+
+  if (!isNaN(restartedAtMs) && (isNaN(deliveredAt) || restartedAtMs > deliveredAt)) {
+    return restartedAtMs + windowMs;
+  }
+
+  const candidates: number[] = [];
+  if (!isNaN(deliveredAt)) {
+    candidates.push(deliveredAt + windowMs);
+  }
+  const rawExpiries = [
+    !isProject ? order.reviewWindowExpiresAt : (order.responseDeadline || order.reviewWindowExpiresAt),
+    (latestDelivery as any)?.responseDeadline,
+    pendingInvoiceRow?.response_deadline || pendingInvoiceRow?.responseDeadline,
+    pendingInvoiceRow?.metadata?.responseDeadline
+  ];
+  for (const exp of rawExpiries) {
+    if (!exp) continue;
+    const parsedExp = Date.parse(String(exp));
+    if (!isNaN(parsedExp)) {
+      if (!hasMoreThanOneDelivery || isNaN(deliveredAt) || parsedExp >= deliveredAt) {
+        candidates.push(parsedExp);
+      }
+    }
+  }
+  if (candidates.length === 0) return !isNaN(deliveredAt) ? deliveredAt + windowMs : null;
+  return Math.min(...candidates);
+}
+
 export async function processAutoAcceptOrders(customNow?: number): Promise<Array<{
   orderId: string;
   acceptedVersion: number;
@@ -872,65 +932,14 @@ export async function processAutoAcceptOrders(customNow?: number): Promise<Array
       const targetOrders: Order[] = fetchedOrders.filter((o): o is Order => Boolean(o));
 
       for (const order of targetOrders) {
-        const isProject = order.orderType === 'project' || (order as any).type === 'project' || Boolean(order.projectId);
-        const persistedDays = !isProject && typeof order.reviewWindowDays === 'number' && order.reviewWindowDays > 0
-          ? order.reviewWindowDays
-          : null;
-        const days = isProject ? 7 : (persistedDays ?? getReviewWindowDays());
-        const windowMs = days * 24 * 60 * 60 * 1000;
-
         const pendingInvRes = await pool.query(
           "SELECT * FROM workstream_offers WHERE order_id = $1 AND kind = 'invoice' AND status = 'pending' ORDER BY created_at DESC LIMIT 1",
           [order.id]
         );
         const pendingInvoiceRow = pendingInvRes.rows[0] || null;
 
-        const hasDeliveryHistory = Array.isArray(order.deliveryHistory) && order.deliveryHistory.length > 0;
-        const latestDelivery = hasDeliveryHistory
-          ? order.deliveryHistory![order.deliveryHistory!.length - 1]
-          : (pendingInvoiceRow
-              ? {
-                  version: Number(pendingInvoiceRow.metadata?.deliveryVersion) || 1,
-                  deliveredAt: pendingInvoiceRow.created_at,
-                  responseDeadline: pendingInvoiceRow.response_deadline || pendingInvoiceRow.metadata?.responseDeadline,
-                  offerId: pendingInvoiceRow.id
-                }
-              : null);
-
-        if (!latestDelivery || !latestDelivery.deliveredAt) continue;
-
-        const deliveredAt = getReviewWindowStart(order, latestDelivery);
-        const restartedAtMs = order.reviewWindowRestartedAt ? Date.parse(order.reviewWindowRestartedAt) : NaN;
-        const hasMoreThanOneDelivery = Array.isArray(order.deliveryHistory) && order.deliveryHistory.length > 1;
-
-        let reviewDeadlineMs: number;
-        if (!isNaN(restartedAtMs) && (isNaN(deliveredAt) || restartedAtMs > deliveredAt)) {
-          reviewDeadlineMs = restartedAtMs + windowMs;
-        } else {
-          const candidates: number[] = [];
-          if (!isNaN(deliveredAt)) {
-            candidates.push(deliveredAt + windowMs);
-          }
-          const rawExpiries = [
-            !isProject ? order.reviewWindowExpiresAt : (order.responseDeadline || order.reviewWindowExpiresAt),
-            (latestDelivery as any)?.responseDeadline,
-            pendingInvoiceRow?.response_deadline,
-            pendingInvoiceRow?.metadata?.responseDeadline
-          ];
-          for (const exp of rawExpiries) {
-            if (!exp) continue;
-            const parsedExp = Date.parse(String(exp));
-            if (!isNaN(parsedExp)) {
-              if (!hasMoreThanOneDelivery || isNaN(deliveredAt) || parsedExp >= deliveredAt) {
-                candidates.push(parsedExp);
-              }
-            }
-          }
-          if (candidates.length === 0) continue;
-          reviewDeadlineMs = Math.min(...candidates);
-        }
-
-        if (now < reviewDeadlineMs) continue;
+        const reviewDeadlineMs = calculateInvoiceReviewDeadline(order, pendingInvoiceRow);
+        if (!reviewDeadlineMs || now < reviewDeadlineMs) continue;
 
         if (Array.isArray(order.revisions)) {
           const hasActiveRequestedRevision = order.revisions.some(rev => rev.status === 'requested');
@@ -950,6 +959,23 @@ export async function processAutoAcceptOrders(customNow?: number): Promise<Array
         if (pendingInvoiceRow && Number(pendingInvoiceRow.amount || 0) > Number(esc.remaining || 0)) {
           continue;
         }
+
+        const hasDeliv = Array.isArray(order.deliveryHistory) && order.deliveryHistory.length > 0;
+        const latestDelivery = hasDeliv
+          ? order.deliveryHistory![order.deliveryHistory!.length - 1]
+          : (pendingInvoiceRow
+              ? {
+                  version: Number(pendingInvoiceRow.metadata?.deliveryVersion) || 1,
+                  deliveredAt: pendingInvoiceRow.created_at || pendingInvoiceRow.createdAt,
+                  responseDeadline: pendingInvoiceRow.response_deadline || pendingInvoiceRow.responseDeadline || pendingInvoiceRow.metadata?.responseDeadline,
+                  offerId: pendingInvoiceRow.id
+                }
+              : { version: 1, deliveredAt: order.createdAt });
+        const isProject = order.orderType === 'project' || (order as any).type === 'project' || Boolean(order.projectId);
+        const persistedDays = !isProject && typeof order.reviewWindowDays === 'number' && order.reviewWindowDays > 0
+          ? order.reviewWindowDays
+          : null;
+        const days = isProject ? 7 : (persistedDays ?? getReviewWindowDays());
 
         if (orderStateLocks.has(order.id)) continue;
         try {
@@ -1135,6 +1161,169 @@ export async function processAutoAcceptOrders(customNow?: number): Promise<Array
   }
 
   return runAutoAccept();
+}
+
+export async function processProjectInvoiceReminders(customNow?: number): Promise<Array<{
+  invoiceId: string;
+  orderId: string;
+  reminderType: 'initial' | 'day3' | 'day6' | 'hours24';
+  buyerId: string;
+}>> {
+  const now = typeof customNow === 'number' ? customNow : Date.now();
+  const pool = postgresStore.getPool();
+  const sentReminders: Array<{ invoiceId: string; orderId: string; reminderType: 'initial' | 'day3' | 'day6' | 'hours24'; buyerId: string }> = [];
+
+  try {
+    const invRes = await pool.query(
+      `SELECT wo.*, o.id as order_id, o.buyer_id as order_buyer_id, o.seller_id as order_seller_id, o.title as order_title, o.status as order_status, o.order_type as order_type, o.project_id
+       FROM workstream_offers wo
+       JOIN orders o ON o.id = wo.order_id
+       WHERE wo.kind = 'invoice' AND wo.status = 'pending'
+         AND (o.order_type = 'project' OR o.project_id IS NOT NULL)
+         AND o.status NOT IN ('completed', 'cancelled', 'refunded', 'disputed')`
+    );
+
+    for (const row of invRes.rows) {
+      const order = await store.getOrder(row.order_id);
+      if (!order) continue;
+
+      // Pausing conditions: active requested revisions, pending cancellation, or open dispute
+      if (Array.isArray(order.revisions) && order.revisions.some((r: any) => r.status === 'requested')) continue;
+      if (order.cancellationRequest && order.cancellationRequest.status === 'pending') continue;
+
+      const dispute = await store.getDisputeByOrderId(order.id);
+      if (dispute && (dispute.status === 'open' || dispute.status === 'under_investigation' || (dispute.status as string) === 'under_review')) {
+        continue;
+      }
+
+      const reviewDeadlineMs = calculateInvoiceReviewDeadline(order, row);
+      if (!reviewDeadlineMs) continue;
+
+      const createdAtMs = Date.parse(row.created_at || row.createdAt);
+      if (isNaN(createdAtMs)) continue;
+
+      const rawMeta = row.metadata;
+      const metadata = (typeof rawMeta === 'string' ? JSON.parse(rawMeta) : (rawMeta || {})) || {};
+      const reminders = { ...(metadata.invoiceReminders || {}) };
+      let changed = false;
+
+      const buyerId = order.buyerId;
+      const formattedDeadline = new Date(reviewDeadlineMs).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+
+      // Check initial reminder: sent when invoice is created / first sweep
+      if (!reminders.initial) {
+        reminders.initial = true;
+        changed = true;
+        sentReminders.push({ invoiceId: row.id, orderId: order.id, reminderType: 'initial', buyerId });
+
+        await createNotification({
+          userId: buyerId,
+          type: 'order',
+          title: `Invoice received for "${order.title}"`,
+          message: `Your project invoice #${row.number || row.id} has been submitted. Funds will automatically release on ${formattedDeadline} unless a revision or dispute is requested.`,
+          link: `/workstream/${order.id}`,
+          metadata: { orderId: order.id, offerId: row.id, reminderType: 'initial' }
+        });
+
+        notifyUserEmail({
+          userId: buyerId,
+          subject: `Action needed: Review invoice for "${order.title}"`,
+          body: `Your project invoice #${row.number || row.id} has been submitted. Please review deliverables before funds auto-release on ${formattedDeadline}.`,
+          path: `/workstream/${order.id}`
+        });
+      }
+
+      // Check day 3 reminder: sent 3 days after invoice was created
+      const day3Threshold = createdAtMs + 3 * 24 * 60 * 60 * 1000;
+      if (now >= day3Threshold && !reminders.day3 && now < reviewDeadlineMs) {
+        reminders.day3 = true;
+        changed = true;
+        sentReminders.push({ invoiceId: row.id, orderId: order.id, reminderType: 'day3', buyerId });
+
+        await createNotification({
+          userId: buyerId,
+          type: 'order',
+          title: `Reminder: Invoice review for "${order.title}"`,
+          message: `Your project invoice #${row.number || row.id} is awaiting review. Funds will automatically release on ${formattedDeadline} unless a revision or dispute is requested.`,
+          link: `/workstream/${order.id}`,
+          metadata: { orderId: order.id, offerId: row.id, reminderType: 'day3' }
+        });
+
+        const buyerUser = await store.getUser(buyerId);
+        if (buyerUser) {
+          notifyUserEmail({
+            user: buyerUser,
+            subject: `Action needed: Review invoice for "${order.title}"`,
+            body: `Your project invoice #${row.number || row.id} has been open for 3 days. Please review deliverables before funds auto-release on ${formattedDeadline}.`,
+            path: `/workstream/${order.id}`
+          });
+        }
+      }
+
+      // Check day 6 reminder: sent 6 days after invoice was created
+      const day6Threshold = createdAtMs + 6 * 24 * 60 * 60 * 1000;
+      if (now >= day6Threshold && !reminders.day6 && now < reviewDeadlineMs) {
+        reminders.day6 = true;
+        changed = true;
+        sentReminders.push({ invoiceId: row.id, orderId: order.id, reminderType: 'day6', buyerId });
+
+        await createNotification({
+          userId: buyerId,
+          type: 'order',
+          title: `Final reminder: Invoice review for "${order.title}"`,
+          message: `Your project invoice #${row.number || row.id} will auto-release tomorrow on ${formattedDeadline}. Review your work now to approve or request revisions.`,
+          link: `/workstream/${order.id}`,
+          metadata: { orderId: order.id, offerId: row.id, reminderType: 'day6' }
+        });
+
+        const buyerUser = await store.getUser(buyerId);
+        if (buyerUser) {
+          notifyUserEmail({
+            user: buyerUser,
+            subject: `Final reminder: Invoice auto-release approaching for "${order.title}"`,
+            body: `Your project invoice #${row.number || row.id} will auto-release on ${formattedDeadline}.`,
+            path: `/workstream/${order.id}`
+          });
+        }
+      }
+
+      // Check 24 hours before release: sent when now >= reviewDeadlineMs - 24 hours
+      const hours24Threshold = reviewDeadlineMs - 24 * 60 * 60 * 1000;
+      if (now >= hours24Threshold && !reminders.hours24 && now < reviewDeadlineMs) {
+        reminders.hours24 = true;
+        changed = true;
+        sentReminders.push({ invoiceId: row.id, orderId: order.id, reminderType: 'hours24', buyerId });
+
+        await createNotification({
+          userId: buyerId,
+          type: 'order',
+          title: `24 hours remaining: Invoice auto-release for "${order.title}"`,
+          message: `Escrow funds for invoice #${row.number || row.id} will automatically release in 24 hours (${formattedDeadline}) if no action is taken.`,
+          link: `/workstream/${order.id}`,
+          metadata: { orderId: order.id, offerId: row.id, reminderType: 'hours24' }
+        });
+
+        const buyerUser = await store.getUser(buyerId);
+        if (buyerUser) {
+          notifyUserEmail({
+            user: buyerUser,
+            subject: `24 hours remaining: Invoice auto-release for "${order.title}"`,
+            body: `Escrow funds for invoice #${row.number || row.id} will automatically release in 24 hours (${formattedDeadline}).`,
+            path: `/workstream/${order.id}`
+          });
+        }
+      }
+
+      if (changed) {
+        metadata.invoiceReminders = reminders;
+        await pool.query('UPDATE workstream_offers SET metadata = $1 WHERE id = $2', [JSON.stringify(metadata), row.id]);
+      }
+    }
+  } catch (err) {
+    console.error('[processProjectInvoiceReminders] Error running invoice reminder sweep:', err);
+  }
+
+  return sentReminders;
 }
 
 export async function atomicUpdateOrder(orderId: string, updates: Record<string, any>, allowedStatuses: string[], client?: any): Promise<boolean> {
