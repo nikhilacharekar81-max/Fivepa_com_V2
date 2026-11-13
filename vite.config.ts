@@ -21,6 +21,15 @@ export default defineConfig(() => {
       // HMR is disabled in AI Studio to prevent WebSocket conflicts and reload loops.
       hmr: false,
       watch: null,
+      warmup: {
+        clientFiles: [
+          './src/entry-client.tsx',
+          './src/App.tsx',
+          './src/layout/Header.tsx',
+          './src/layout/Footer.tsx',
+          './src/components/marketplace/MarketplaceGigsView.tsx',
+        ],
+      },
     },
   };
 });

@@ -6,6 +6,7 @@ interface AvatarProps {
   size?: 'xs' | 'sm' | 'md' | 'lg' | 'xl' | string;
   className?: string;
   availableNow?: boolean;
+  loading?: 'lazy' | 'eager';
 }
 
 export const Avatar: React.FC<AvatarProps> = ({
@@ -13,7 +14,8 @@ export const Avatar: React.FC<AvatarProps> = ({
   name = 'User',
   size = 'md',
   className = '',
-  availableNow = false
+  availableNow = false,
+  loading = 'lazy'
 }) => {
   const [hasError, setHasError] = useState(false);
 
@@ -23,6 +25,13 @@ export const Avatar: React.FC<AvatarProps> = ({
     size === 'lg' ? 'w-14 h-14 text-base' :
     size === 'xl' ? 'w-20 h-20 text-xl' :
     'w-9 h-9 text-sm'; // md default
+
+  const pixelSize =
+    size === 'xs' ? 20 :
+    size === 'sm' ? 28 :
+    size === 'lg' ? 56 :
+    size === 'xl' ? 80 :
+    36;
 
   const initials = (name || 'User')
     .split(' ')
@@ -54,6 +63,10 @@ export const Avatar: React.FC<AvatarProps> = ({
         <img
           src={src || ''}
           alt={name || 'User'}
+          width={pixelSize}
+          height={pixelSize}
+          loading={loading}
+          decoding="async"
           className="w-full h-full rounded-full object-cover border border-slate-200 bg-slate-100"
           onError={() => setHasError(true)}
         />

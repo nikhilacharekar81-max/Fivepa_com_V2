@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import React, { Suspense, lazy, useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useAppData } from './hooks/useAppData';
 import { useWorkstream } from './hooks/workstream/useWorkstream';
 import { Header } from './layout/Header';
@@ -11,39 +11,87 @@ import { Footer } from './layout/Footer';
 import { ImpersonationBanner } from './layout/ImpersonationBanner';
 import { PPH_CATEGORIES } from './components/HeaderCategoriesNav';
 import { MarketplaceGigsView } from './components/marketplace/MarketplaceGigsView';
-import { FreelancerSearchView } from './components/marketplace/FreelancerSearchView';
-import { ProjectSearchView } from './components/marketplace/ProjectSearchView';
-import { ProjectDetailView } from './components/marketplace/ProjectDetailView';
-import { BuyerActivityView } from './components/marketplace/BuyerActivityView';
-import { FreelancerActivityView } from './components/marketplace/FreelancerActivityView';
-import { GigDetailView } from './components/gigs/GigDetailView';
-import { CreateGigView } from './components/gigs/CreateGigView';
-import { FreelancerProfileView } from './components/profile/FreelancerProfileView';
-import { EditProfilePage } from './components/profile/EditProfilePage';
-import { AdminPage } from './pages/AdminPage';
-import { SettingsPage } from './pages/SettingsPage';
-import { LegalPage } from './pages/LegalPage';
-import { WorkstreamWorkspace } from './components/workstream/WorkstreamWorkspace';
-import { WorkstreamList } from './components/workstream/WorkstreamList';
-import { PaymentsModule } from './components/PaymentsModule';
-import {
-  LoginModal,
-  SignupModal,
-  UserSwitchModal,
-  ForgotPasswordModal,
-  VerifyModal,
-  SupportModal,
-  WishlistModal,
-  EmailNotificationsModal
-} from './components/modals';
 import { slugify, getGigUrl } from './utils/slugify';
-import { getAuthToken, setAuthToken, clearAuthToken, requestDemoSession } from './utils/authToken';
+import { getAuthToken, setAuthToken, clearAuthToken, requestDemoSession, isTokenStructurallyValid } from './utils/authToken';
 import { getDeviceId } from './utils/deviceId';
 import { DEFAULT_GIG_IMAGE } from './constants';
 import { RESERVED_ROUTES } from './shared/routes';
-import { CheckoutResultView } from './components/checkout/CheckoutResultView';
 import { initiateGatewayCheckout } from './utils/gatewayCheckout';
 import type { UserAccount, Gig, Order, GigExtra } from './types';
+
+const FreelancerSearchView = lazy(() =>
+  import('./components/marketplace/FreelancerSearchView').then(m => ({ default: m.FreelancerSearchView }))
+);
+const ProjectSearchView = lazy(() =>
+  import('./components/marketplace/ProjectSearchView').then(m => ({ default: m.ProjectSearchView }))
+);
+const ProjectDetailView = lazy(() =>
+  import('./components/marketplace/ProjectDetailView').then(m => ({ default: m.ProjectDetailView }))
+);
+const BuyerActivityView = lazy(() =>
+  import('./components/marketplace/BuyerActivityView').then(m => ({ default: m.BuyerActivityView }))
+);
+const FreelancerActivityView = lazy(() =>
+  import('./components/marketplace/FreelancerActivityView').then(m => ({ default: m.FreelancerActivityView }))
+);
+const GigDetailView = lazy(() =>
+  import('./components/gigs/GigDetailView').then(m => ({ default: m.GigDetailView }))
+);
+const CreateGigView = lazy(() =>
+  import('./components/gigs/CreateGigView').then(m => ({ default: m.CreateGigView }))
+);
+const FreelancerProfileView = lazy(() =>
+  import('./components/profile/FreelancerProfileView').then(m => ({ default: m.FreelancerProfileView }))
+);
+const EditProfilePage = lazy(() =>
+  import('./components/profile/EditProfilePage').then(m => ({ default: m.EditProfilePage }))
+);
+const AdminPage = lazy(() =>
+  import('./pages/AdminPage').then(m => ({ default: m.AdminPage }))
+);
+const SettingsPage = lazy(() =>
+  import('./pages/SettingsPage').then(m => ({ default: m.SettingsPage }))
+);
+const LegalPage = lazy(() =>
+  import('./pages/LegalPage').then(m => ({ default: m.LegalPage }))
+);
+const WorkstreamWorkspace = lazy(() =>
+  import('./components/workstream/WorkstreamWorkspace').then(m => ({ default: m.WorkstreamWorkspace }))
+);
+const WorkstreamList = lazy(() =>
+  import('./components/workstream/WorkstreamList').then(m => ({ default: m.WorkstreamList }))
+);
+const PaymentsModule = lazy(() =>
+  import('./components/PaymentsModule').then(m => ({ default: m.PaymentsModule }))
+);
+const CheckoutResultView = lazy(() =>
+  import('./components/checkout/CheckoutResultView').then(m => ({ default: m.CheckoutResultView }))
+);
+
+const LoginModal = lazy(() =>
+  import('./components/modals/LoginModal').then(m => ({ default: m.LoginModal }))
+);
+const SignupModal = lazy(() =>
+  import('./components/modals/SignupModal').then(m => ({ default: m.SignupModal }))
+);
+const UserSwitchModal = lazy(() =>
+  import('./components/modals/UserSwitchModal').then(m => ({ default: m.UserSwitchModal }))
+);
+const ForgotPasswordModal = lazy(() =>
+  import('./components/modals/ForgotPasswordModal').then(m => ({ default: m.ForgotPasswordModal }))
+);
+const VerifyModal = lazy(() =>
+  import('./components/modals/VerifyModal').then(m => ({ default: m.VerifyModal }))
+);
+const SupportModal = lazy(() =>
+  import('./components/modals/SupportModal').then(m => ({ default: m.SupportModal }))
+);
+const WishlistModal = lazy(() =>
+  import('./components/modals/WishlistModal').then(m => ({ default: m.WishlistModal }))
+);
+const EmailNotificationsModal = lazy(() =>
+  import('./components/modals/EmailNotificationsModal').then(m => ({ default: m.EmailNotificationsModal }))
+);
 
 export interface AppProps {
   initialPath?: string;
@@ -91,8 +139,18 @@ export default function App({ initialPath = '/', initialData }: AppProps) {
     return () => window.removeEventListener('popstate', handlePopState);
   }, []);
 
+  // Coordinate session resolution so useAppData, Header, and WebSocket avoid waterfalls and duplicate calls
+  const [sessionReady, setSessionReady] = useState(false);
+  const sessionPromiseRef = useRef<Promise<boolean> | null>(null);
+  const waitForSession = useCallback(() => {
+    return sessionPromiseRef.current ?? Promise.resolve(true);
+  }, []);
+
   // Application Data
-  const appData = useAppData(initialData);
+  const appData = useAppData(initialData, {
+    waitForSession,
+    activePath: currentPath
+  });
   const {
     users,
     setUsers,
@@ -148,18 +206,21 @@ export default function App({ initialPath = '/', initialData }: AppProps) {
   const [impersonatedUser, setImpersonatedUser] = useState<UserAccount | null>(null);
   const activeUser = impersonatedUser || currentUser;
 
-  // Keep currentUser in sync with canonical users list
+  // Keep currentUser in sync with canonical users list without overwriting private session fields
   useEffect(() => {
     if (currentUser?.id && users.length > 0) {
       const freshUser = users.find(u => u.id === currentUser.id);
-      if (freshUser && JSON.stringify(freshUser) !== JSON.stringify(currentUser)) {
-        setCurrentUser(freshUser);
-        if (typeof window !== 'undefined') {
-          localStorage.setItem('current_user', JSON.stringify(freshUser));
+      if (freshUser) {
+        const mergedUser = { ...currentUser, ...freshUser };
+        if (JSON.stringify(mergedUser) !== JSON.stringify(currentUser)) {
+          setCurrentUser(mergedUser);
+          if (typeof window !== 'undefined') {
+            localStorage.setItem('current_user', JSON.stringify(mergedUser));
+          }
         }
       }
     }
-  }, [users, currentUser?.id]);
+  }, [users, currentUser]);
 
   const updateCurrentUser = useCallback(
     (u: UserAccount | null | ((prev: UserAccount | null) => UserAccount | null)) => {
@@ -180,7 +241,7 @@ export default function App({ initialPath = '/', initialData }: AppProps) {
 
   const loadUserSession = useCallback(async (): Promise<boolean> => {
     const existingToken = getAuthToken();
-    if (existingToken) {
+    if (existingToken && isTokenStructurallyValid(existingToken)) {
       try {
         const res = await fetch('/api/auth/me', {
           headers: { 'Authorization': `Bearer ${existingToken}` }
@@ -193,6 +254,8 @@ export default function App({ initialPath = '/', initialData }: AppProps) {
           }
         }
       } catch {}
+    } else if (existingToken) {
+      clearAuthToken();
     }
 
     let storedUser: any = null;
@@ -216,14 +279,34 @@ export default function App({ initialPath = '/', initialData }: AppProps) {
     return false;
   }, [updateCurrentUser]);
 
-  // Initial client hydration fetch (single coordinated pass)
+  // Concurrent initial client hydration: start public data + session resolution together
   useEffect(() => {
     let cancelled = false;
-    loadUserSession().finally(() => {
+    const rawToken = getAuthToken();
+    if (rawToken && !isTokenStructurallyValid(rawToken)) {
+      clearAuthToken();
+    }
+    const tokenBefore = getAuthToken();
+
+    const sessionPromise = loadUserSession().then((ok) => {
       if (!cancelled) {
-        refresh();
+        setSessionReady(true);
       }
+      return ok;
     });
+    sessionPromiseRef.current = sessionPromise;
+
+    void refresh();
+
+    if (tokenBefore) {
+      sessionPromise.then(() => {
+        const tokenAfter = getAuthToken();
+        if (!cancelled && tokenAfter && tokenAfter !== tokenBefore) {
+          void refresh();
+        }
+      });
+    }
+
     return () => {
       cancelled = true;
     };
@@ -341,6 +424,7 @@ export default function App({ initialPath = '/', initialData }: AppProps) {
     impersonatedUser,
     selectedOrder,
     setSelectedOrder,
+    sessionReady,
     refresh
   });
 
@@ -906,6 +990,25 @@ export default function App({ initialPath = '/', initialData }: AppProps) {
     if (cleanPath === '/verify') setIsVerifyModalOpen(true);
     if (cleanPath === '/forgot-password') setIsForgotPasswordModalOpen(true);
   }, [cleanPath]);
+
+  // Fetch route-skipped datasets if user navigates away from a legal page or into a category-dependent route
+  const prevCleanPathRef = useRef(cleanPath);
+  useEffect(() => {
+    const prev = prevCleanPathRef.current;
+    prevCleanPathRef.current = cleanPath;
+    if (prev === cleanPath) return;
+
+    const wasLegal = prev === '/terms' || prev === '/privacy' || prev === '/refund-policy';
+    const isLegal = cleanPath === '/terms' || cleanPath === '/privacy' || cleanPath === '/refund-policy';
+    const needsCats =
+      cleanPath === '/freelance-activity' ||
+      cleanPath === '/freelancer' ||
+      cleanPath.startsWith('/admin');
+
+    if ((wasLegal && !isLegal && gigs.length === 0) || (needsCats && categories.length === 0)) {
+      void refresh(activeUser?.id);
+    }
+  }, [cleanPath, gigs.length, categories.length, refresh, activeUser?.id]);
 
   const resolveOrderFromRouteParam = useCallback(
     (targetId: string | null) => {
@@ -1606,6 +1709,7 @@ export default function App({ initialPath = '/', initialData }: AppProps) {
       <Header
         navigate={navigate}
         currentUser={activeUser}
+        sessionReady={sessionReady}
         orders={orders}
         likedGigIds={likedGigIds}
         isGigsList={isGigsList}
@@ -1665,141 +1769,184 @@ export default function App({ initialPath = '/', initialData }: AppProps) {
 
       {/* Main Page Content Body */}
       <main className="flex-1">
-        {mainContent}
+        <Suspense
+          fallback={
+            <div className="max-w-7xl mx-auto py-16 px-4 flex items-center justify-center">
+              <div
+                className="w-8 h-8 border-2 border-emerald-600 border-t-transparent rounded-full animate-spin"
+                aria-label="Loading view"
+              />
+            </div>
+          }
+        >
+          {mainContent}
+        </Suspense>
       </main>
 
       {/* Global Footer */}
       <Footer navigate={navigate} />
 
-      {/* Auth & Utility Modals */}
-      <LoginModal
-        isOpen={isLoginModalOpen}
-        onClose={() => setIsLoginModalOpen(false)}
-        loginRequiresCode={loginRequiresCode}
-        loginVerificationMessage={loginVerificationMessage}
-        mockEmailCodeDisplay={mockEmailCodeDisplay}
-        loginEmail={loginEmail}
-        setLoginEmail={setLoginEmail}
-        loginPassword={loginPassword}
-        setLoginPassword={setLoginPassword}
-        loginCode={loginCode}
-        setLoginCode={setLoginCode}
-        handleLoginSubmit={handleLoginSubmit}
-        setLoginRequiresCode={setLoginRequiresCode}
-        usersList={users}
-        updateCurrentUser={updateCurrentUser}
-        setImpersonatedUser={setImpersonatedUser}
-        refresh={refresh}
-        setIsForgotPasswordModalOpen={setIsForgotPasswordModalOpen}
-        setMockEmailCodeDisplay={setMockEmailCodeDisplay}
-        loginError={loginError}
-        isSubmittingLogin={isSubmittingLogin}
-        onSwitchToSignup={() => {
-          setIsLoginModalOpen(false);
-          setIsSignupModalOpen(true);
-        }}
-      />
+      {/* Auth & Utility Modals (lazily loaded on demand) */}
+      {isLoginModalOpen && (
+        <Suspense fallback={null}>
+          <LoginModal
+            isOpen={isLoginModalOpen}
+            onClose={() => setIsLoginModalOpen(false)}
+            loginRequiresCode={loginRequiresCode}
+            loginVerificationMessage={loginVerificationMessage}
+            mockEmailCodeDisplay={mockEmailCodeDisplay}
+            loginEmail={loginEmail}
+            setLoginEmail={setLoginEmail}
+            loginPassword={loginPassword}
+            setLoginPassword={setLoginPassword}
+            loginCode={loginCode}
+            setLoginCode={setLoginCode}
+            handleLoginSubmit={handleLoginSubmit}
+            setLoginRequiresCode={setLoginRequiresCode}
+            usersList={users}
+            updateCurrentUser={updateCurrentUser}
+            setImpersonatedUser={setImpersonatedUser}
+            refresh={refresh}
+            setIsForgotPasswordModalOpen={setIsForgotPasswordModalOpen}
+            setMockEmailCodeDisplay={setMockEmailCodeDisplay}
+            loginError={loginError}
+            isSubmittingLogin={isSubmittingLogin}
+            onSwitchToSignup={() => {
+              setIsLoginModalOpen(false);
+              setIsSignupModalOpen(true);
+            }}
+          />
+        </Suspense>
+      )}
 
-      <SignupModal
-        isOpen={isSignupModalOpen}
-        onClose={() => setIsSignupModalOpen(false)}
-        handleSignupSubmit={handleSignupSubmit}
-        signupName={signupName}
-        setSignupName={setSignupName}
-        signupEmail={signupEmail}
-        setSignupEmail={setSignupEmail}
-        signupMobile={signupMobile}
-        setSignupMobile={setSignupMobile}
-        signupPassword={signupPassword}
-        setSignupPassword={setSignupPassword}
-        signupConfirmPassword={signupConfirmPassword}
-        setSignupConfirmPassword={setSignupConfirmPassword}
-        signupError={signupError}
-        isSubmittingSignup={isSubmittingSignup}
-        onSwitchToLogin={() => {
-          setIsSignupModalOpen(false);
-          setIsLoginModalOpen(true);
-        }}
-      />
+      {isSignupModalOpen && (
+        <Suspense fallback={null}>
+          <SignupModal
+            isOpen={isSignupModalOpen}
+            onClose={() => setIsSignupModalOpen(false)}
+            handleSignupSubmit={handleSignupSubmit}
+            signupName={signupName}
+            setSignupName={setSignupName}
+            signupEmail={signupEmail}
+            setSignupEmail={setSignupEmail}
+            signupMobile={signupMobile}
+            setSignupMobile={setSignupMobile}
+            signupPassword={signupPassword}
+            setSignupPassword={setSignupPassword}
+            signupConfirmPassword={signupConfirmPassword}
+            setSignupConfirmPassword={setSignupConfirmPassword}
+            signupError={signupError}
+            isSubmittingSignup={isSubmittingSignup}
+            onSwitchToLogin={() => {
+              setIsSignupModalOpen(false);
+              setIsLoginModalOpen(true);
+            }}
+          />
+        </Suspense>
+      )}
 
-      <UserSwitchModal
-        isOpen={isUserSwitchModalOpen}
-        onClose={() => setIsUserSwitchModalOpen(false)}
-        usersList={users}
-        currentUser={activeUser}
-        setCurrentUser={updateCurrentUser}
-        setImpersonatedUser={setImpersonatedUser}
-        refresh={refresh}
-      />
+      {isUserSwitchModalOpen && (
+        <Suspense fallback={null}>
+          <UserSwitchModal
+            isOpen={isUserSwitchModalOpen}
+            onClose={() => setIsUserSwitchModalOpen(false)}
+            usersList={users}
+            currentUser={activeUser}
+            setCurrentUser={updateCurrentUser}
+            setImpersonatedUser={setImpersonatedUser}
+            refresh={refresh}
+          />
+        </Suspense>
+      )}
 
-      <ForgotPasswordModal
-        isOpen={isForgotPasswordModalOpen}
-        onClose={() => setIsForgotPasswordModalOpen(false)}
-        forgotStep={forgotStep}
-        setForgotStep={setForgotStep}
-        forgotQuery={forgotQuery}
-        setForgotQuery={setForgotQuery}
-        forgotCode={forgotCode}
-        setForgotCode={setForgotCode}
-        mockForgotCodeDisplay={mockForgotCodeDisplay}
-        newPassword={newPassword}
-        setNewPassword={setNewPassword}
-        confirmNewPassword={confirmNewPassword}
-        setConfirmNewPassword={setConfirmNewPassword}
-        handleForgotRequest={handleForgotRequest}
-        handleForgotVerify={handleForgotVerify}
-        handleForgotReset={handleForgotReset}
-        setForgotCodeEmpty={() => setForgotCode('')}
-      />
+      {isForgotPasswordModalOpen && (
+        <Suspense fallback={null}>
+          <ForgotPasswordModal
+            isOpen={isForgotPasswordModalOpen}
+            onClose={() => setIsForgotPasswordModalOpen(false)}
+            forgotStep={forgotStep}
+            setForgotStep={setForgotStep}
+            forgotQuery={forgotQuery}
+            setForgotQuery={setForgotQuery}
+            forgotCode={forgotCode}
+            setForgotCode={setForgotCode}
+            mockForgotCodeDisplay={mockForgotCodeDisplay}
+            newPassword={newPassword}
+            setNewPassword={setNewPassword}
+            confirmNewPassword={confirmNewPassword}
+            setConfirmNewPassword={setConfirmNewPassword}
+            handleForgotRequest={handleForgotRequest}
+            handleForgotVerify={handleForgotVerify}
+            handleForgotReset={handleForgotReset}
+            setForgotCodeEmpty={() => setForgotCode('')}
+          />
+        </Suspense>
+      )}
 
-      <VerifyModal
-        isOpen={isVerifyModalOpen}
-        onClose={() => setIsVerifyModalOpen(false)}
-        verificationMode={verificationMode}
-        setVerificationMode={setVerificationMode}
-        emailCodeInput={emailCodeInput}
-        setEmailCodeInput={setEmailCodeInput}
-        smsCodeInput={smsCodeInput}
-        setSmsCodeInput={setSmsCodeInput}
-        handleVerifyEmailSubmit={handleVerifyEmailSubmit}
-        handleVerifySmsSubmit={(e) => e.preventDefault()}
-        handleResendEmailCode={() => {}}
-        handleResendSmsCode={() => {}}
-        verifyEmail={verifyEmail}
-        mockEmailCodeDisplay={mockEmailCodeDisplay || undefined}
-      />
+      {isVerifyModalOpen && (
+        <Suspense fallback={null}>
+          <VerifyModal
+            isOpen={isVerifyModalOpen}
+            onClose={() => setIsVerifyModalOpen(false)}
+            verificationMode={verificationMode}
+            setVerificationMode={setVerificationMode}
+            emailCodeInput={emailCodeInput}
+            setEmailCodeInput={setEmailCodeInput}
+            smsCodeInput={smsCodeInput}
+            setSmsCodeInput={setSmsCodeInput}
+            handleVerifyEmailSubmit={handleVerifyEmailSubmit}
+            handleVerifySmsSubmit={(e) => e.preventDefault()}
+            handleResendEmailCode={() => {}}
+            handleResendSmsCode={() => {}}
+            verifyEmail={verifyEmail}
+            mockEmailCodeDisplay={mockEmailCodeDisplay || undefined}
+          />
+        </Suspense>
+      )}
 
-      <SupportModal
-        isOpen={isSupportModalOpen}
-        onClose={() => setIsSupportModalOpen(false)}
-        supportSubject={supportSubject}
-        setSupportSubject={setSupportSubject}
-        supportMessage={supportMessage}
-        setSupportMessage={setSupportMessage}
-        onSubmitTicket={(e) => {
-          e.preventDefault();
-          setIsSupportModalOpen(false);
-        }}
-      />
+      {isSupportModalOpen && (
+        <Suspense fallback={null}>
+          <SupportModal
+            isOpen={isSupportModalOpen}
+            onClose={() => setIsSupportModalOpen(false)}
+            supportSubject={supportSubject}
+            setSupportSubject={setSupportSubject}
+            supportMessage={supportMessage}
+            setSupportMessage={setSupportMessage}
+            onSubmitTicket={(e) => {
+              e.preventDefault();
+              setIsSupportModalOpen(false);
+            }}
+          />
+        </Suspense>
+      )}
 
-      <WishlistModal
-        isOpen={isWishlistModalOpen}
-        onClose={() => setIsWishlistModalOpen(false)}
-        likedGigIds={likedGigIds}
-        gigs={gigs}
-        onToggleLike={(id) => handleToggleLike(id)}
-        getGigUrl={getGigUrl}
-        navigate={navigate}
-      />
+      {isWishlistModalOpen && (
+        <Suspense fallback={null}>
+          <WishlistModal
+            isOpen={isWishlistModalOpen}
+            onClose={() => setIsWishlistModalOpen(false)}
+            likedGigIds={likedGigIds}
+            gigs={gigs}
+            onToggleLike={(id) => handleToggleLike(id)}
+            getGigUrl={getGigUrl}
+            navigate={navigate}
+          />
+        </Suspense>
+      )}
 
-      <EmailNotificationsModal
-        isOpen={isEmailNotificationsModalOpen}
-        onClose={() => setIsEmailNotificationsModalOpen(false)}
-        userEmails={userEmails as any}
-        userEmail={activeUser?.email || ''}
-        onMarkAsRead={() => {}}
-        onOpenSupport={() => setIsSupportModalOpen(true)}
-      />
+      {isEmailNotificationsModalOpen && (
+        <Suspense fallback={null}>
+          <EmailNotificationsModal
+            isOpen={isEmailNotificationsModalOpen}
+            onClose={() => setIsEmailNotificationsModalOpen(false)}
+            userEmails={userEmails as any}
+            userEmail={activeUser?.email || ''}
+            onMarkAsRead={() => {}}
+            onOpenSupport={() => setIsSupportModalOpen(true)}
+          />
+        </Suspense>
+      )}
     </div>
   );
 }

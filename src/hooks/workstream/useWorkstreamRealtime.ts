@@ -15,6 +15,8 @@ export interface UseWorkstreamRealtimeProps {
   onUnknownOrder?: () => void;
   /** Called (debounced) when a system/lifecycle message arrives, so order status can be refetched. */
   onOrderStateChanged?: () => void;
+  /** True once initial client session verification/demo-session resolution finishes. */
+  sessionReady?: boolean;
 }
 
 /**
@@ -29,7 +31,8 @@ export function useWorkstreamRealtime({
   onReconnect,
   hasOrder,
   onUnknownOrder,
-  onOrderStateChanged
+  onOrderStateChanged,
+  sessionReady = true
 }: UseWorkstreamRealtimeProps) {
   const wsRef = useRef<WebSocket | null>(null);
   const onReconnectRef = useRef(onReconnect);
@@ -42,9 +45,11 @@ export function useWorkstreamRealtime({
   onOrderStateChangedRef.current = onOrderStateChanged;
   const stateRefreshTimerRef = useRef<any>(null);
   const lastUnknownRefreshRef = useRef(0);
+  const hasOpenedOnceRef = useRef(false);
 
   useEffect(() => {
     // Authenticate with the signed session token only. Never fall back to a user ID or an admin identity.
+    if (!sessionReady) return;
     const token = getAuthToken();
     if (!token) return;
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -62,7 +67,10 @@ export function useWorkstreamRealtime({
         const activeToken = getAuthToken() || token;
         console.log('Workstream WebSocket connected, authenticating...');
         socket.send(JSON.stringify({ type: 'AUTHENTICATE', token: activeToken }));
-        if (onReconnectRef.current) onReconnectRef.current();
+        if (hasOpenedOnceRef.current && onReconnectRef.current) {
+          onReconnectRef.current();
+        }
+        hasOpenedOnceRef.current = true;
       };
 
       socket.onmessage = (event) => {
@@ -176,7 +184,7 @@ export function useWorkstreamRealtime({
         wsRef.current.close();
       }
     };
-  }, [currentUser?.id, impersonatedUser?.id, setMessages, setOrders]);
+  }, [currentUser?.id, impersonatedUser?.id, sessionReady, setMessages, setOrders]);
 
   return {
     wsRef

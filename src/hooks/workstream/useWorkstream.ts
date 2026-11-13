@@ -53,6 +53,7 @@ export function useWorkstream(props?: any) {
   ordersRef.current = props?.orders;
   const realtime = useWorkstreamRealtime({
     ...props,
+    sessionReady: props?.sessionReady ?? true,
     onReconnect,
     hasOrder: (id: string) => (ordersRef.current || []).some((o: any) => o.id === id),
     onUnknownOrder: props?.refresh,

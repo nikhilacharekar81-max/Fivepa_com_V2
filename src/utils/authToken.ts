@@ -26,20 +26,56 @@ export function clearAuthToken(): void {
   } catch {}
 }
 
-/** Dev/test only: asks the server for a real signed session for a non-privileged demo user. */
-export async function requestDemoSession(userId: string): Promise<{ token: string; user: any } | null> {
+export function decodeTokenPayload(token: string | null): { id?: string; role?: string; exp?: number } | null {
+  if (!token) return null;
   try {
-    const res = await fetch('/api/auth/demo-session', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ userId })
-    });
-    if (!res.ok) return null;
-    const data = await res.json();
-    return data?.token && data?.user ? { token: data.token, user: data.user } : null;
+    const parts = token.split('.');
+    if (!parts[1] || typeof atob !== 'function') return null;
+    let b64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+    while (b64.length % 4 !== 0) {
+      b64 += '=';
+    }
+    return JSON.parse(atob(b64));
   } catch {
     return null;
   }
+}
+
+export function isTokenStructurallyValid(token: string | null): boolean {
+  const payload = decodeTokenPayload(token);
+  if (!payload || !payload.id) return false;
+  if (typeof payload.exp === 'number' && payload.exp * 1000 <= Date.now()) {
+    return false;
+  }
+  return true;
+}
+
+const inFlightDemoSessions = new Map<string, Promise<{ token: string; user: any } | null>>();
+
+/** Dev/test only: asks the server for a real signed session for a non-privileged demo user. */
+export async function requestDemoSession(userId: string): Promise<{ token: string; user: any } | null> {
+  const existing = inFlightDemoSessions.get(userId);
+  if (existing) return existing;
+
+  const promise = (async () => {
+    try {
+      const res = await fetch('/api/auth/demo-session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId })
+      });
+      if (!res.ok) return null;
+      const data = await res.json();
+      return data?.token && data?.user ? { token: data.token, user: data.user } : null;
+    } catch {
+      return null;
+    } finally {
+      inFlightDemoSessions.delete(userId);
+    }
+  })();
+
+  inFlightDemoSessions.set(userId, promise);
+  return promise;
 }
 
 /**

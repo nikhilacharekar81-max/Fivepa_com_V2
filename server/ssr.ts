@@ -33,7 +33,17 @@ export async function setupSSR(
 ) {
   let vite: any;
   let templateHtml: string = '';
+  let devTransformedTemplate: string | null = null;
   let ssrRender: any;
+
+  const stripDefaultMetaTags = (html: string) =>
+    html
+      .replace(/<title>.*?<\/title>/gi, '')
+      .replace(/<meta\s+name=["']description["'].*?>/gi, '')
+      .replace(/<meta\s+name=["']robots["'].*?>/gi, '')
+      .replace(/<link\s+rel=["']canonical["'].*?>/gi, '')
+      .replace(/<meta\s+property=["']og:.*?["'].*?>/gi, '')
+      .replace(/<meta\s+name=["']twitter:.*?["'].*?>/gi, '');
 
   const distPath = path.resolve(root, 'dist');
   const clientDist = path.resolve(distPath, 'client');
@@ -60,7 +70,11 @@ export async function setupSSR(
     app.use(vite.middlewares);
     templateHtml = fs.readFileSync(path.resolve(root, 'index.html'), 'utf-8');
 
-    // Load SSR entry module in background
+    // Pre-warm HTML transform & SSR entry module in background
+    vite.transformIndexHtml('/', templateHtml).then((transformed: string) => {
+      devTransformedTemplate = stripDefaultMetaTags(transformed);
+    }).catch(() => {});
+
     vite.ssrLoadModule('/src/entry-server.tsx').then((mod: any) => {
       ssrRender = mod.render;
     }).catch((err: any) => {
@@ -137,11 +151,11 @@ export async function setupSSR(
       const PUBLIC_CATEGORIES = rawData.categories || [];
 
       let initialData: any = {
-        query,
-        gigs: PUBLIC_GIGS,
-        users: PUBLIC_USERS,
-        projects: PUBLIC_PROJECTS,
-        categories: PUBLIC_CATEGORIES
+        ...(query !== undefined ? { query } : {}),
+        ...(PUBLIC_GIGS.length > 0 ? { gigs: PUBLIC_GIGS } : {}),
+        ...(PUBLIC_USERS.length > 0 ? { users: PUBLIC_USERS } : {}),
+        ...(PUBLIC_PROJECTS.length > 0 ? { projects: PUBLIC_PROJECTS } : {}),
+        ...(PUBLIC_CATEGORIES.length > 0 ? { categories: PUBLIC_CATEGORIES } : {})
       };
 
       let notFound = false;
@@ -221,20 +235,17 @@ export async function setupSSR(
         initialData.notFound = true;
       }
 
-      // 3. Prepare HTML template
+      // 3. Prepare HTML template (cache dev Vite HTML transform since index.html is static with watch: null)
       let template = templateHtml || fs.readFileSync(path.resolve(root, 'index.html'), 'utf-8');
       if (!hasProdBuild && vite) {
-        template = await vite.transformIndexHtml(req.originalUrl, template);
+        if (!devTransformedTemplate) {
+          const transformed = await vite.transformIndexHtml('/', template);
+          devTransformedTemplate = stripDefaultMetaTags(transformed);
+        }
+        template = devTransformedTemplate;
+      } else {
+        template = stripDefaultMetaTags(template);
       }
-
-      // Clean existing head tags from template
-      template = template
-        .replace(/<title>.*?<\/title>/gi, '')
-        .replace(/<meta\s+name=["']description["'].*?>/gi, '')
-        .replace(/<meta\s+name=["']robots["'].*?>/gi, '')
-        .replace(/<link\s+rel=["']canonical["'].*?>/gi, '')
-        .replace(/<meta\s+property=["']og:.*?["'].*?>/gi, '')
-        .replace(/<meta\s+name=["']twitter:.*?["'].*?>/gi, '');
 
       // 4. React SSR render full HTML
       let renderFn = ssrRender;

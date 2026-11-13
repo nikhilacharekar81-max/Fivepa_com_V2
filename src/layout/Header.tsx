@@ -31,6 +31,7 @@ export interface HeaderProps {
   onOpenLogin?: () => void;
   onOpenSignup?: () => void;
   onOpenSwitchUser?: () => void;
+  sessionReady?: boolean;
 }
 
 /** Site header: brand, primary nav, category/search/workstream dropdowns and the user menu. */
@@ -38,7 +39,7 @@ export function Header({
   navigate, currentUser, orders, likedGigIds,
   isGigsList, isGigDetail, isProjectsList, isProjectDetail, isCategoryRoute,
   loadUserSession, updateCurrentUser, setImpersonatedUser, setSelectedOrder, setPath, fetchMessages,
-  onOpenLogin, onOpenSignup, onOpenSwitchUser
+  onOpenLogin, onOpenSignup, onOpenSwitchUser, sessionReady = true
 }: HeaderProps) {
   // Dropdown state is local to the header (moved out of App).
   const [isUserDropdownOpen, setIsUserDropdownOpen] = useState(false);
@@ -106,34 +107,56 @@ export function Header({
     if (typeof window !== 'undefined') localStorage.setItem('worksphere_notif_sound', String(next));
   };
 
+  const inFlightNotifsRef = useRef<Promise<void> | null>(null);
+  const lastNotifsSessionRef = useRef<string | null>(null);
+
   useEffect(() => {
     const token = getAuthToken();
-    if (!currentUser?.id || !token || typeof window === 'undefined') {
-      setNotifications([]);
+    if (!sessionReady || !currentUser?.id || !token || typeof window === 'undefined') {
+      if (!currentUser?.id || !token) {
+        setNotifications([]);
+        lastNotifsSessionRef.current = null;
+      }
       return;
     }
-    const fetchNotifs = async () => {
+    const sessionKey = `${currentUser.id}:${token}`;
+    const fetchNotifs = async (force = false) => {
       const currentToken = getAuthToken();
       if (!currentToken) return;
-      try {
-        const res = await fetch('/api/notifications', {
-          headers: { 'Authorization': `Bearer ${currentToken}` }
-        });
-        if (res.ok) {
-          const data = await res.json();
-          setNotifications(prev => {
-            const prevUnread = prev.filter(n => !n.read).length;
-            const newUnread = (data as any[]).filter(n => !n.read).length;
-            if (newUnread > prevUnread && prev.length > 0) {
-              playNotificationSound();
-            }
-            return data;
+      if (inFlightNotifsRef.current) return inFlightNotifsRef.current;
+      if (!force && lastNotifsSessionRef.current === `${currentUser.id}:${currentToken}`) return;
+      lastNotifsSessionRef.current = `${currentUser.id}:${currentToken}`;
+      const p = (async () => {
+        try {
+          const res = await fetch('/api/notifications', {
+            headers: { 'Authorization': `Bearer ${currentToken}` }
           });
+          if (res.ok) {
+            const data = await res.json();
+            setNotifications(prev => {
+              const prevUnread = prev.filter(n => !n.read).length;
+              const newUnread = (data as any[]).filter(n => !n.read).length;
+              if (newUnread > prevUnread && prev.length > 0) {
+                playNotificationSound();
+              }
+              return data;
+            });
+          } else {
+            lastNotifsSessionRef.current = null;
+          }
+        } catch {
+          lastNotifsSessionRef.current = null;
+        } finally {
+          inFlightNotifsRef.current = null;
         }
-      } catch {}
+      })();
+      inFlightNotifsRef.current = p;
+      return p;
     };
-    fetchNotifs();
-    const interval = setInterval(fetchNotifs, 30000);
+    if (lastNotifsSessionRef.current !== sessionKey) {
+      fetchNotifs(false);
+    }
+    const interval = setInterval(() => fetchNotifs(true), 30000);
     const handleRealtimeNotification = (evt: Event) => {
       const detail = (evt as CustomEvent).detail;
       if (detail && detail.id) {
@@ -143,7 +166,7 @@ export function Header({
           return [detail, ...prev];
         });
       } else {
-        fetchNotifs();
+        fetchNotifs(true);
       }
     };
     window.addEventListener('fivepa:notification', handleRealtimeNotification as EventListener);
@@ -151,7 +174,7 @@ export function Header({
       clearInterval(interval);
       window.removeEventListener('fivepa:notification', handleRealtimeNotification as EventListener);
     };
-  }, [currentUser?.id]);
+  }, [currentUser?.id, sessionReady]);
 
   const unreadCount = notifications.filter(n => !n.read).length;
 

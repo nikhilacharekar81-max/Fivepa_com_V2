@@ -9,6 +9,7 @@ import dotenv from 'dotenv';
 import { initWebSocketServer } from './server/websocket.js';
 import { runBackgroundJobs } from './server/jobs/backgroundJobs.js';
 import { setupSSR } from './server/ssr.js';
+import { PRIVATE_ROUTES, RESERVED_ROUTES } from './src/shared/routes.js';
 import { slugify } from './src/utils/slugify.js';
 import { postgresStore, assertProductionPostgresConfigured } from './server/db/postgresStore.js';
 import { apiRouter } from './server/routes/index.js';
@@ -202,54 +203,108 @@ app.use('/', rootRouter);
 try {
   await setupSSR(app, IS_PROD, __dirname, async (pathname?: string) => {
     try {
-      const pool = postgresStore.getPool();
-      const pathParts = (pathname || '').split('/').filter(Boolean).map(p => safeDecodeURIComponent(p));
-      const topLevelStaticRoutes = new Set([
-        'gigs', 'projects', 'search-projects', 'project-search', 'freelance-jobs',
-        'freelancers', 'search-freelancers', 'freelancer-search',
-        'dashboard', 'orders', 'wallet', 'admin', 'messages', 'settings', 'activity', 'support'
-      ]);
-      const isSingleStaticRoute = pathParts.length === 1 && topLevelStaticRoutes.has(pathParts[0].toLowerCase());
-      const candidateTokens = isSingleStaticRoute
-        ? []
-        : Array.from(new Set(pathParts.filter(p => p.length > 0 && p.length <= 120 && !['gig', 'gigs', 'project', 'projects', 'categories'].includes(p.toLowerCase()))));
+      let cleanPath = safeDecodeURIComponent((pathname || '/').split('?')[0]);
+      if (cleanPath.endsWith('/index.html')) {
+        cleanPath = cleanPath.slice(0, -11) || '/';
+      } else if (cleanPath.endsWith('.html')) {
+        cleanPath = cleanPath.slice(0, -5) || '/';
+      }
+      cleanPath = cleanPath.replace(/\/+$/, '') || '/';
+      const lowerPath = cleanPath.toLowerCase();
+      const pathParts = cleanPath.split('/').filter(Boolean);
+      const firstSeg = pathParts[0]?.toLowerCase() || '';
 
+      // Legal and private/auth/app routes do not render public marketplace SSR data
+      const isLegalRoute = ['/terms', '/privacy', '/refund-policy'].includes(lowerPath);
+      const isPrivateRoute =
+        pathParts.length > 0 &&
+        (PRIVATE_ROUTES.some(pr => pr.toLowerCase() === firstSeg) || firstSeg === 'post-gig');
+
+      if (isLegalRoute || isPrivateRoute) {
+        return { gigs: [], users: [], projects: [], categories: [] };
+      }
+
+      const isHomeOrGigsRoute =
+        cleanPath === '/' || lowerPath === '/gigs' || (pathParts.length >= 1 && firstSeg === 'categories');
+      const isProjectsListRoute = ['/projects', '/search-projects', '/project-search', '/freelance-jobs'].includes(lowerPath);
+      const isProjectDetailRoute = pathParts.length === 2 && (firstSeg === 'projects' || firstSeg === 'project');
+      const isFreelancersListRoute = ['/freelancers', '/search-freelancers', '/freelancer-search'].includes(lowerPath);
+      const isGigDetailRoute =
+        (pathParts.length >= 2 && (firstSeg === 'gig' || firstSeg === 'gigs')) ||
+        (pathParts.length === 2 && !RESERVED_ROUTES.includes(firstSeg));
+      const isProfileRoute = pathParts.length === 1 && !RESERVED_ROUTES.includes(firstSeg);
+
+      if (
+        !isHomeOrGigsRoute &&
+        !isProjectsListRoute &&
+        !isProjectDetailRoute &&
+        !isFreelancersListRoute &&
+        !isGigDetailRoute &&
+        !isProfileRoute
+      ) {
+        return { gigs: [], users: [], projects: [], categories: [] };
+      }
+
+      const needGigs = isHomeOrGigsRoute || isFreelancersListRoute || isGigDetailRoute || isProfileRoute;
+      const needUsers = isHomeOrGigsRoute || isFreelancersListRoute || isProfileRoute;
+      const needProjects = isHomeOrGigsRoute || isProjectsListRoute || isProjectDetailRoute;
+      const projectsLimit = isHomeOrGigsRoute ? 8 : 50;
+
+      const pool = postgresStore.getPool();
+      const candidateTokens = (isGigDetailRoute || isProjectDetailRoute || isProfileRoute)
+        ? Array.from(
+            new Set(
+              pathParts.filter(
+                p => p.length > 0 && p.length <= 120 && !['gig', 'gigs', 'project', 'projects', 'categories'].includes(p.toLowerCase())
+              )
+            )
+          )
+        : [];
+      const lowerCandidateTokens = candidateTokens.map(t => t.toLowerCase());
+
+      const emptyRows = { rows: [] as any[] };
       const [gigsRes, usersRes, projectsRes] = await Promise.all([
-        candidateTokens.length > 0
-          ? pool.query(
-              `SELECT * FROM gigs
-               WHERE status IN ('active', 'published')
-                 AND (id = ANY($1::text[]) OR LOWER(COALESCE(slug, '')) = ANY($2::text[]))
-               UNION
-               (SELECT * FROM gigs WHERE status IN ('active', 'published') ORDER BY created_at DESC NULLS LAST LIMIT 50)`,
-              [candidateTokens, candidateTokens.map(t => t.toLowerCase())]
-            )
-          : pool.query("SELECT * FROM gigs WHERE status IN ('active', 'published') ORDER BY created_at DESC NULLS LAST LIMIT 50"),
-        candidateTokens.length > 0
-          ? pool.query(
-              `SELECT id, name, username, role, avatar, title, rating, reviews_count, hourly_rate, earned, completed_jobs, bio, skills, status, verified, email_verified, mobile_verified, created_at, is_flagged, is_available_now
-               FROM users
-               WHERE status = 'active'
-                 AND (id = ANY($1::text[]) OR LOWER(COALESCE(username, '')) = ANY($2::text[]))
-               UNION
-               (SELECT id, name, username, role, avatar, title, rating, reviews_count, hourly_rate, earned, completed_jobs, bio, skills, status, verified, email_verified, mobile_verified, created_at, is_flagged, is_available_now
-                FROM users WHERE status = 'active' ORDER BY created_at DESC NULLS LAST LIMIT 50)`,
-              [candidateTokens, candidateTokens.map(t => t.toLowerCase())]
-            )
-          : pool.query(
-              `SELECT id, name, username, role, avatar, title, rating, reviews_count, hourly_rate, earned, completed_jobs, bio, skills, status, verified, email_verified, mobile_verified, created_at, is_flagged, is_available_now
-               FROM users WHERE status = 'active' ORDER BY created_at DESC NULLS LAST LIMIT 50`
-            ),
-        candidateTokens.length > 0
-          ? pool.query(
-              `SELECT * FROM projects
-               WHERE status = 'open'
-                 AND (id = ANY($1::text[]) OR LOWER(COALESCE(slug, '')) = ANY($2::text[]))
-               UNION
-               (SELECT * FROM projects WHERE status = 'open' ORDER BY created_at DESC NULLS LAST LIMIT 50)`,
-              [candidateTokens, candidateTokens.map(t => t.toLowerCase())]
-            )
-          : pool.query("SELECT * FROM projects WHERE status = 'open' ORDER BY created_at DESC NULLS LAST LIMIT 50")
+        !needGigs
+          ? Promise.resolve(emptyRows)
+          : candidateTokens.length > 0
+            ? pool.query(
+                `SELECT * FROM gigs
+                 WHERE status IN ('active', 'published')
+                   AND (id = ANY($1::text[]) OR LOWER(COALESCE(slug, '')) = ANY($2::text[]))
+                 UNION
+                 (SELECT * FROM gigs WHERE status IN ('active', 'published') ORDER BY created_at DESC NULLS LAST LIMIT 50)`,
+                [candidateTokens, lowerCandidateTokens]
+              )
+            : pool.query("SELECT * FROM gigs WHERE status IN ('active', 'published') ORDER BY created_at DESC NULLS LAST LIMIT 50"),
+        !needUsers
+          ? Promise.resolve(emptyRows)
+          : candidateTokens.length > 0
+            ? pool.query(
+                `SELECT id, name, username, role, avatar, title, rating, reviews_count, hourly_rate, earned, completed_jobs, bio, skills, status, verified, email_verified, mobile_verified, created_at, is_flagged, is_available_now
+                 FROM users
+                 WHERE status = 'active'
+                   AND (id = ANY($1::text[]) OR LOWER(COALESCE(username, '')) = ANY($2::text[]))
+                 UNION
+                 (SELECT id, name, username, role, avatar, title, rating, reviews_count, hourly_rate, earned, completed_jobs, bio, skills, status, verified, email_verified, mobile_verified, created_at, is_flagged, is_available_now
+                  FROM users WHERE status = 'active' ORDER BY created_at DESC NULLS LAST LIMIT 50)`,
+                [candidateTokens, lowerCandidateTokens]
+              )
+            : pool.query(
+                `SELECT id, name, username, role, avatar, title, rating, reviews_count, hourly_rate, earned, completed_jobs, bio, skills, status, verified, email_verified, mobile_verified, created_at, is_flagged, is_available_now
+                 FROM users WHERE status = 'active' ORDER BY created_at DESC NULLS LAST LIMIT 50`
+              ),
+        !needProjects
+          ? Promise.resolve(emptyRows)
+          : candidateTokens.length > 0
+            ? pool.query(
+                `SELECT * FROM projects
+                 WHERE status = 'open'
+                   AND (id = ANY($1::text[]) OR LOWER(COALESCE(slug, '')) = ANY($2::text[]))
+                 UNION
+                 (SELECT * FROM projects WHERE status = 'open' ORDER BY created_at DESC NULLS LAST LIMIT ${projectsLimit})`,
+                [candidateTokens, lowerCandidateTokens]
+              )
+            : pool.query(`SELECT * FROM projects WHERE status = 'open' ORDER BY created_at DESC NULLS LAST LIMIT ${projectsLimit}`)
       ]);
       
       const gigs = gigsRes.rows.map(r => ({
@@ -323,10 +378,10 @@ try {
           acceptedProposalId: r.accepted_proposal_id || undefined
         }));
       
-      return { gigs, users, projects, categories };
+      return { gigs, users, projects, categories: [] };
     } catch (err) {
       console.error('[SSR] Error fetching data for SSR:', err);
-      return { gigs: [], users: [], projects: [], categories };
+      return { gigs: [], users: [], projects: [], categories: [] };
     }
   });
 } catch (ssrSetupErr) {
