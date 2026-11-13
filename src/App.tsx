@@ -11,6 +11,12 @@ import { Footer } from './layout/Footer';
 import { ImpersonationBanner } from './layout/ImpersonationBanner';
 import { PPH_CATEGORIES } from './components/HeaderCategoriesNav';
 import { MarketplaceGigsView } from './components/marketplace/MarketplaceGigsView';
+import { FreelancerSearchView } from './components/marketplace/FreelancerSearchView';
+import { ProjectSearchView } from './components/marketplace/ProjectSearchView';
+import { ProjectDetailView } from './components/marketplace/ProjectDetailView';
+import { GigDetailView } from './components/gigs/GigDetailView';
+import { FreelancerProfileView } from './components/profile/FreelancerProfileView';
+import { LegalPage } from './pages/LegalPage';
 import { slugify, getGigUrl } from './utils/slugify';
 import { getAuthToken, setAuthToken, clearAuthToken, requestDemoSession, isTokenStructurallyValid } from './utils/authToken';
 import { getDeviceId } from './utils/deviceId';
@@ -19,29 +25,15 @@ import { RESERVED_ROUTES } from './shared/routes';
 import { initiateGatewayCheckout } from './utils/gatewayCheckout';
 import type { UserAccount, Gig, Order, GigExtra } from './types';
 
-const FreelancerSearchView = lazy(() =>
-  import('./components/marketplace/FreelancerSearchView').then(m => ({ default: m.FreelancerSearchView }))
-);
-const ProjectSearchView = lazy(() =>
-  import('./components/marketplace/ProjectSearchView').then(m => ({ default: m.ProjectSearchView }))
-);
-const ProjectDetailView = lazy(() =>
-  import('./components/marketplace/ProjectDetailView').then(m => ({ default: m.ProjectDetailView }))
-);
+// Keep non-public / authenticated application modules and modals lazy-loaded
 const BuyerActivityView = lazy(() =>
   import('./components/marketplace/BuyerActivityView').then(m => ({ default: m.BuyerActivityView }))
 );
 const FreelancerActivityView = lazy(() =>
   import('./components/marketplace/FreelancerActivityView').then(m => ({ default: m.FreelancerActivityView }))
 );
-const GigDetailView = lazy(() =>
-  import('./components/gigs/GigDetailView').then(m => ({ default: m.GigDetailView }))
-);
 const CreateGigView = lazy(() =>
   import('./components/gigs/CreateGigView').then(m => ({ default: m.CreateGigView }))
-);
-const FreelancerProfileView = lazy(() =>
-  import('./components/profile/FreelancerProfileView').then(m => ({ default: m.FreelancerProfileView }))
 );
 const EditProfilePage = lazy(() =>
   import('./components/profile/EditProfilePage').then(m => ({ default: m.EditProfilePage }))
@@ -51,9 +43,6 @@ const AdminPage = lazy(() =>
 );
 const SettingsPage = lazy(() =>
   import('./pages/SettingsPage').then(m => ({ default: m.SettingsPage }))
-);
-const LegalPage = lazy(() =>
-  import('./pages/LegalPage').then(m => ({ default: m.LegalPage }))
 );
 const WorkstreamWorkspace = lazy(() =>
   import('./components/workstream/WorkstreamWorkspace').then(m => ({ default: m.WorkstreamWorkspace }))
